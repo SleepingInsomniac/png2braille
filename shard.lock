@@ -1,0 +1,10 @@
+version: 2.0
+shards:
+  dot_display:
+    git: https://github.com/sleepinginsomniac/dot_display.git
+    version: 0.1.0+git.commit.58d7d2487bc1ef98d046f75492b0770506d99843
+
+  png:
+    git: https://github.com/sleepinginsomniac/png.git
+    version: 0.4.1+git.commit.4b9c633b20d5f4cb468b6b54b905ee5e01510826
+
