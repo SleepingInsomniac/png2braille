@@ -4,8 +4,8 @@ require "dot_display"
 
 require "option_parser"
 
-BLACK    = PNG::RGB(UInt8).new(0, 0, 0)
-WHITE    = PNG::RGB(UInt8).new(255, 255, 255)
+BLACK    = PNG::Gray(UInt8).new(0)
+WHITE    = PNG::Gray(UInt8).new(255)
 MAX_DIFF = BLACK.dist(WHITE)
 
 NAME    = "png2braille"
@@ -15,6 +15,8 @@ USAGE   = "Usage: #{NAME} <path>"
 struct Options
   property max_width : UInt32? = nil
   property invert : Bool = false
+  property dither : Bool = true
+  property threshold : Float64 = 0.5
 end
 
 options = Options.new
@@ -39,6 +41,14 @@ OptionParser.parse do |parser|
   parser.on("--invert", "Invert the image") do
     options.invert = true
   end
+
+  parser.on("--no-dither", "Skip dithering") do
+    options.dither = false
+  end
+
+  parser.on("--threshold FLOAT", "Threshold for b/w (0.0 - 1.0) default: 0.5") do |value|
+    options.threshold = value.to_f64
+  end
 end
 
 if path = ARGV.pop?
@@ -53,36 +63,35 @@ if path = ARGV.pop?
 
   canvas = PNG::Filter.grayscale(canvas)
 
-  diffuse = Slice(Int16).new((canvas.width * canvas.height).to_i32) do |i|
-    y, x = i.divmod(canvas.width)
-    canvas[x, y][0].to_i16
-  end
+  if options.dither
+    diffuse = Slice(Int16).new((canvas.width * canvas.height).to_i32) do |i|
+      y, x = i.divmod(canvas.width)
+      canvas[x, y][0].to_i16
+    end
 
-  canvas.height.times do |y|
-    canvas.width.times do |x|
-      i = y * canvas.width + x
-      color = diffuse[i]
-      new_color = color > 127 ? 255u8 : 0u8
-      canvas[x, y] = new_color
-      quant_error = color - new_color
+    canvas.height.times do |y|
+      canvas.width.times do |x|
+        i = y * canvas.width + x
+        color = diffuse[i]
+        new_color = color > 127u8 ? 255u8 : 0u8
+        canvas[x, y] = new_color
+        quant_error = color - new_color
 
-      n = i + 1; diffuse[n] = (diffuse[n] + quant_error * 7 / 16).round.to_i16 if n < diffuse.size
-      n = i + canvas.width - 1; diffuse[n] = (diffuse[n] + quant_error * 3 / 16).round.to_i16 if n < diffuse.size
-      n = i + canvas.width; diffuse[n] = (diffuse[n] + quant_error * 5 / 16).round.to_i16 if n < diffuse.size
-      n = i + canvas.width + 1; diffuse[n] = (diffuse[n] + quant_error * 1 / 16).round.to_i16 if n < diffuse.size
+        n = i + 1; diffuse[n] = (diffuse[n] + quant_error * 7 / 16).round.to_i16 if n < diffuse.size
+        n = i + canvas.width - 1; diffuse[n] = (diffuse[n] + quant_error * 3 / 16).round.to_i16 if n < diffuse.size
+        n = i + canvas.width; diffuse[n] = (diffuse[n] + quant_error * 5 / 16).round.to_i16 if n < diffuse.size
+        n = i + canvas.width + 1; diffuse[n] = (diffuse[n] + quant_error * 1 / 16).round.to_i16 if n < diffuse.size
+      end
     end
   end
 
   dots = DotDisplay.new(canvas.width, canvas.height)
+
   canvas.height.times do |y|
     canvas.width.times do |x|
-      c = canvas.color(x, y).to_rgb8
+      c = canvas.color(x, y)
       d = c.dist(BLACK)
-      if options.invert
-        dots[x, y] = d > MAX_DIFF / 2
-      else
-        dots[x, y] = d < MAX_DIFF / 2
-      end
+      dots[x, y] = options.invert ? d > MAX_DIFF * options.threshold : d < MAX_DIFF * options.threshold
     end
   end
 
